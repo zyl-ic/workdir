@@ -1,0 +1,53 @@
+# 默认配置（3m 地图）。
+# 命令行可用 --map / --seed / --max-steps 覆盖部分字段。
+
+env_args:
+  map_name: 3m
+  seed: 1
+
+# Agent 网络（RNN）
+agent:
+  rnn_hidden_dim: 64
+  # n_actions 与 input_shape 由 main 根据环境信息自动填入
+
+# 动作选择（epsilon-greedy）
+action_selector:
+  epsilon_start: 1.0
+  epsilon_finish: 0.05
+  epsilon_anneal_time: 50000
+
+# 观测与策略
+obs_last_action: false
+obs_agent_id: false
+agent_output_type: null    # null -> 输出 Q 值；"pi_logits" -> 输出策略
+
+# Learner
+lr: 0.0005
+optim_alpha: 0.99
+optim_eps: 0.00001
+gamma: 0.99
+double_q: true
+target_update_interval: 200
+grad_norm_clip: 10.0
+learner_log_interval: 10000
+
+# Mixer
+mixer: qmix                # null -> VDN/IQL；"qmix" -> QMIX
+mixing_embed_dim: 32
+hypernet_layers: 2
+hypernet_embed: 64
+
+# Runner
+batch_size_run: 1
+test_nepisode: 32
+runner_log_interval: 10000
+t_max: 100000
+
+# Buffer & 训练
+buffer_size: 5000        # ReplayBuffer 容量（episode 数）
+batch_size: 32           # 每次训练的采样 batch（episode 数）
+
+# Checkpoint
+checkpoint_path: checkpoints
+save_interval: 1000      # 每 N 个 episode 保存一次
+resume: false            # 启动时若存在 checkpoint 则加载

@@ -108,7 +108,7 @@ class SMACEnv:
         self.state = self.get_state()
         self.avail_actions = self.get_avail_actions()
 
-        return self.obs.copy(), self.state.copy(), self.avail_actions.copy()
+        # return self.obs.copy(), self.state.copy(), self.avail_actions.copy()
 
     def step(self, actions):
         """
@@ -195,13 +195,7 @@ class SMACEnv:
         # Useful standard information
         info["battle_won"] = self.get_battle_won()
 
-        return (
-            self.obs.copy(),
-            self.state.copy(),
-            float(reward),
-            bool(terminated),
-            info,
-        )
+        return float(reward), bool(terminated), info
 
     # =============================================================
     # Observation
