@@ -17,9 +17,9 @@ action_selector:
   epsilon_anneal_time: 50000
 
 # 观测与策略
-obs_last_action: false
-obs_agent_id: false
-agent_output_type: null    # null -> 输出 Q 值；"pi_logits" -> 输出策略
+obs_last_action: true     # 输入拼接上一时刻动作的 one-hot
+obs_agent_id: true        # 输入拼接 agent id（one-hot）
+agent_output_type: null   # null -> 输出 Q 值；"pi_logits" -> 输出策略
 
 # Learner
 lr: 0.0005
@@ -41,6 +41,7 @@ hypernet_embed: 64
 batch_size_run: 1
 test_nepisode: 32
 runner_log_interval: 10000
+evaluate_interval: 10000   # 每多少 t_env 评估一次
 t_max: 100000
 
 # Buffer & 训练
