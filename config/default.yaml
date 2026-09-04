@@ -42,7 +42,7 @@ batch_size_run: 1
 test_nepisode: 32
 runner_log_interval: 10000
 evaluate_interval: 10000   # 每多少 t_env 评估一次
-t_max: 100000
+t_max: 5000000
 
 # Buffer & 训练
 buffer_size: 5000        # ReplayBuffer 容量（episode 数）
@@ -51,4 +51,5 @@ batch_size: 32           # 每次训练的采样 batch（episode 数）
 # Checkpoint
 checkpoint_path: checkpoints
 save_interval: 1000      # 每 N 个 episode 保存一次
-resume: false            # 启动时若存在 checkpoint 则加载
+resume: true            # 启动时若存在 checkpoint 则加载
+#resume: false            # 启动时若存在 checkpoint 则加载

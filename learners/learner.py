@@ -51,9 +51,10 @@ class QLearner:
         # Calculate the Q-Values necessary for the target
         target_mac_out = []
         self.target_mac.init_hidden(batch.batch_size)
-        for t in range(batch.max_seq_length):
-            target_agent_outs = self.target_mac.forward(batch, t=t)
-            target_mac_out.append(target_agent_outs)
+        with th.no_grad():
+            for t in range(batch.max_seq_length):
+                target_agent_outs = self.target_mac.forward(batch, t=t)
+                target_mac_out.append(target_agent_outs)
 
         # We don't need the first timesteps Q-Value estimate for calculating targets
         target_mac_out = th.stack(target_mac_out[1:], dim=1)  # Concat across time
@@ -74,7 +75,8 @@ class QLearner:
         # Mix
         if self.mixer is not None:
             chosen_action_qvals = self.mixer(chosen_action_qvals, batch["state"][:, :-1])
-            target_max_qvals = self.target_mixer(target_max_qvals, batch["state"][:, 1:])
+            with th.no_grad():
+                target_max_qvals = self.target_mixer(target_max_qvals, batch["state"][:, 1:])
 
         # Calculate 1-step Q-Learning targets
         targets = rewards + self.args.gamma * (1 - terminated) * target_max_qvals

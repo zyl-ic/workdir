@@ -1,0 +1,8 @@
+# 绘图配置（utils/plot_csv.py 使用）
+
+csv: /mnt/e/ReinforcementLearning/workdir/logs/3m_s1/stats.csv   # 输入 CSV 路径
+output: null                # 输出图片路径；null -> 与 csv 同名 .png
+metrics: null               # 要画的指标；null -> 全部；也可用列表或逗号分隔字符串
+same_plot: false            # true -> 所有指标画在同一张图
+cols: 2                     # 每行子图数（非 same_plot 时生效）
+title: null                 # 图片标题

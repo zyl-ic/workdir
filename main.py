@@ -1,7 +1,8 @@
 import argparse
 import json
+import random
 from pathlib import Path
-
+import numpy as np
 import torch as th
 from omegaconf import OmegaConf
 
@@ -24,8 +25,38 @@ def load_config(cli) -> OmegaConf:
         args.env_args.seed = cli.seed
     if cli.max_steps is not None:
         args.t_max = cli.max_steps
+    if cli.resume is not None:
+        args.resume = cli.resume
 
     return args
+
+
+def set_seed(seed):
+    """设置 python / numpy / torch 的随机种子。"""
+    random.seed(seed)
+    np.random.seed(seed)
+    th.manual_seed(seed)
+    if th.cuda.is_available():
+        th.cuda.manual_seed_all(seed)
+
+
+def get_rng_state():
+    state = {
+        "torch": th.get_rng_state(),
+        "numpy": np.random.get_state(),
+        "random": random.getstate(),
+    }
+    if th.cuda.is_available():
+        state["torch_cuda"] = th.cuda.get_rng_state_all()
+    return state
+
+
+def set_rng_state(state):
+    th.set_rng_state(state["torch"])
+    if state.get("torch_cuda") is not None:
+        th.cuda.set_rng_state_all(state["torch_cuda"])
+    np.random.set_state(state["numpy"])
+    random.setstate(state["random"])
 
 
 def main():
@@ -34,6 +65,8 @@ def main():
     parser.add_argument("--map", default=None)
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--max-steps", type=int, default=None)
+    parser.add_argument("--resume", action=argparse.BooleanOptionalAction, default=None,
+                        help="是否从 checkpoint 续训（默认用 yaml 里的 resume）")
     cli = parser.parse_args()
 
     args = load_config(cli)
@@ -41,6 +74,9 @@ def main():
 
     # ---- 运行时信息：设备 ----
     args.device = "cuda" if th.cuda.is_available() else "cpu"
+
+    # ---- 设随机种子（创建任何东西之前）----
+    set_seed(args.env_args.seed)
 
     # ---- 先建一个临时环境读取维度信息（MAC/QMixer 构造需要 n_agents/state_shape）----
     env_args = OmegaConf.to_container(args.env_args, resolve=True)
@@ -92,12 +128,16 @@ def main():
 
     episode = 0
     if args.resume and (ckpt_dir / "agent.th").exists():
+        learner.load_models(str(ckpt_dir))
+        if (ckpt_dir / "buffer.th").exists():
+            buffer.load(str(ckpt_dir / "buffer.th"))
+        if (ckpt_dir / "rng.th").exists():
+            set_rng_state(th.load(str(ckpt_dir / "rng.th"), weights_only=False))
         meta_path = ckpt_dir / "meta.json"
         if meta_path.exists():
             meta = json.loads(meta_path.read_text())
             episode = meta.get("episode", 0)
             runner.t_env = meta.get("t_env", 0)
-        learner.load_models(str(ckpt_dir))
         logger.info(f"Resumed from checkpoint: episode={episode}, t_env={runner.t_env}")
 
     logger.info("=" * 60)
@@ -146,6 +186,8 @@ def main():
         if episode % args.save_interval == 0:
             ckpt_dir.mkdir(parents=True, exist_ok=True)
             learner.save_models(str(ckpt_dir))
+            buffer.save(str(ckpt_dir / "buffer.th"))
+            th.save(get_rng_state(), str(ckpt_dir / "rng.th"))
             (ckpt_dir / "meta.json").write_text(
                 json.dumps({"episode": episode, "t_env": runner.t_env})
             )
@@ -154,6 +196,8 @@ def main():
     # 训练结束再存一份
     ckpt_dir.mkdir(parents=True, exist_ok=True)
     learner.save_models(str(ckpt_dir))
+    buffer.save(str(ckpt_dir / "buffer.th"))
+    th.save(get_rng_state(), str(ckpt_dir / "rng.th"))
     (ckpt_dir / "meta.json").write_text(
         json.dumps({"episode": episode, "t_env": runner.t_env})
     )

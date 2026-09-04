@@ -243,6 +243,21 @@ class ReplayBuffer(EpisodeBatch):
             ep_ids = np.random.choice(self.episodes_in_buffer, batch_size, replace=False)
             return self[ep_ids]
 
+    def save(self, path):
+        th.save({
+            "buffer_index": self.buffer_index,
+            "episodes_in_buffer": self.episodes_in_buffer,
+            "transition_data": self.data.transition_data,
+            "episode_data": self.data.episode_data,
+        }, path)
+
+    def load(self, path):
+        ckpt = th.load(path, map_location="cpu", weights_only=True)
+        self.buffer_index = ckpt["buffer_index"]
+        self.episodes_in_buffer = ckpt["episodes_in_buffer"]
+        self.data.transition_data = ckpt["transition_data"]
+        self.data.episode_data = ckpt["episode_data"]
+
     def __repr__(self):
         return "ReplayBuffer. {}/{} episodes. Keys:{} Groups:{}".format(self.episodes_in_buffer,
                                                                         self.buffer_size,

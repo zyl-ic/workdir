@@ -192,9 +192,6 @@ class SMACEnv:
 
         info = {} if info is None else dict(info)
 
-        # Useful standard information
-        info["battle_won"] = self.get_battle_won()
-
         return float(reward), bool(terminated), info
 
     # =============================================================
@@ -314,28 +311,6 @@ class SMACEnv:
     # =============================================================
     # Battle information
     # =============================================================
-
-    def get_battle_won(self):
-        """
-        Return whether the latest episode was won.
-
-        SMAC's battle_won() returns a dictionary such as:
-
-            {"won": True}
-
-        """
-
-        try:
-            result = self.env.get_stats()
-
-            if isinstance(result, dict):
-                if "won" in result:
-                    return bool(result["won"])
-
-        except Exception:
-            pass
-
-        return False
 
     # =============================================================
     # Episode statistics
