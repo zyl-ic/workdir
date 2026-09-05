@@ -1,0 +1,9 @@
+# 地图配置：1c3s5z（1 colossus + 3 stalker + 5 zealot，难）
+
+env_args:
+  map_name: 1c3s5z
+
+agent:
+  rnn_hidden_dim: 128
+
+t_max: 5000000

@@ -1,0 +1,9 @@
+# 地图配置：2s3z（2 stalker + 3 zealot，中等）
+
+env_args:
+  map_name: 2s3z
+
+agent:
+  rnn_hidden_dim: 64
+
+t_max: 3000000

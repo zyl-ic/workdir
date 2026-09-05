@@ -1,0 +1,9 @@
+# 地图配置：MMM（marine + marauder + medivac，混合兵种，中等）
+
+env_args:
+  map_name: MMM
+
+agent:
+  rnn_hidden_dim: 64
+
+t_max: 5000000

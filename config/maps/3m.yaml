@@ -1,0 +1,9 @@
+# 地图配置：3m（3 个 marine 对 3 个 marine，最简单，入门）
+
+env_args:
+  map_name: 3m
+
+agent:
+  rnn_hidden_dim: 64
+
+t_max: 2000000

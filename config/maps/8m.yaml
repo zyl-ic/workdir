@@ -1,0 +1,9 @@
+# 地图配置：8m（8 个 marine 对 8 个 marine，简单）
+
+env_args:
+  map_name: 8m
+
+agent:
+  rnn_hidden_dim: 64
+
+t_max: 2000000

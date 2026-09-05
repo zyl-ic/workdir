@@ -1,0 +1,9 @@
+# 地图配置：5m_vs_6m（5 marine vs 6 marine，不对称，中等偏难）
+
+env_args:
+  map_name: 5m_vs_6m
+
+agent:
+  rnn_hidden_dim: 64
+
+t_max: 5000000

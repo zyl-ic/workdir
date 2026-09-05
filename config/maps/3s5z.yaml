@@ -1,0 +1,9 @@
+# 地图配置：3s5z（3 stalker + 5 zealot，中等）
+
+env_args:
+  map_name: 3s5z
+
+agent:
+  rnn_hidden_dim: 64
+
+t_max: 3000000

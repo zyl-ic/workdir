@@ -20,14 +20,14 @@ from llm.manager import LLMAssistManager
 
 
 def load_config(cli) -> OmegaConf:
-    # 合并：default 共用参数 + 算法特有参数（qmix.yaml / mappo.yaml）
+    # 合并：default 共用 + 地图配置（maps/{map}.yaml）+ 算法配置（qmix.yaml / mappo.yaml）
     base = OmegaConf.load("config/default.yaml")
+    map_name = cli.map if cli.map is not None else base.get("map", "3m")
+    map_cfg = OmegaConf.load(f"config/maps/{map_name}.yaml")
     algo = OmegaConf.load(cli.config)
-    args = OmegaConf.merge(base, algo)
+    args = OmegaConf.merge(base, map_cfg, algo)
 
     # 命令行覆盖（None 表示使用 yaml 里的值）
-    if cli.map is not None:
-        args.env_args.map_name = cli.map
     if cli.seed is not None:
         args.env_args.seed = cli.seed
     if cli.max_steps is not None:
@@ -69,7 +69,7 @@ def set_rng_state(state):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="config/qmix.yaml")
-    parser.add_argument("--map", default=None)
+    parser.add_argument("--map", default=None, help="地图名（对应 config/maps/{map}.yaml，默认用 default.yaml 的 map）")
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--max-steps", type=int, default=None)
     parser.add_argument("--resume", action=argparse.BooleanOptionalAction, default=None,

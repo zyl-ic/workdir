@@ -1,0 +1,9 @@
+# 地图配置：2c_vs_64zg（2 colossus vs 64 zergling，大规模，难）
+
+env_args:
+  map_name: 2c_vs_64zg
+
+agent:
+  rnn_hidden_dim: 128
+
+t_max: 10000000

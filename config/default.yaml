@@ -1,11 +1,13 @@
-# 共用配置（由 main.py 与 qmix.yaml / mappo.yaml 合并）。
+# 共用配置（由 main.py 与 maps/{map}.yaml + qmix.yaml / mappo.yaml 合并）。
 # 命令行可用 --map / --seed / --max-steps 覆盖部分字段。
 
+# 默认地图（对应 config/maps/{map}.yaml，命令行 --map 可覆盖）
+map: 3m
+
 env_args:
-  map_name: 3m
   seed: 1
 
-# Agent 网络（RNN）
+# Agent 网络（RNN；rnn_hidden_dim 由地图配置覆盖，这里只是兜底）
 agent:
   rnn_hidden_dim: 64
   # n_actions 与 input_shape 由 main 根据环境信息自动填入
