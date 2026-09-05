@@ -5,17 +5,19 @@ from multiprocessing import Pipe, Process
 import numpy as np
 import torch as th
 
-from llm.base import InterventionContext
+from llm.base import InterventionContext, MetricsHistory
 from llm.manager import LLMAssistManager
 
 # Based (very) heavily on SubprocVecEnv from OpenAI Baselines
 class ParallelRunner:
 
-    def __init__(self, args, logger, mac, llm=None):
+    def __init__(self, args, logger, mac, llm=None, metrics_history=None):
         self.args = args
         self.logger = logger
         self.mac = mac
         self.llm = llm if llm is not None else LLMAssistManager()
+        self.metrics_history = metrics_history if metrics_history is not None else MetricsHistory()
+        self.return_history = []  # 持久的 reward 历史（供 LLM 上下文，不被周期性 clear）
         self.batch_size = self.args.batch_size_run
 
         # Make subprocesses for the envs (each env uses a different seed)
@@ -54,11 +56,20 @@ class ParallelRunner:
         self.preprocess = preprocess
 
     def _llm_ctx(self, test_mode, **extra):
+        metrics = dict(self.test_stats if test_mode else self.train_stats)  # 环境统计
+        metrics.update(self.metrics_history.latest())  # 训练指标最新值
+        rh = self.return_history
+        if rh:
+            metrics["return_mean"] = float(np.mean(rh))
+            metrics["return_std"] = float(np.std(rh))
+            metrics["return_ma"] = float(np.mean(rh[-50:]))   # 近 50 集 reward 移动平均
+            metrics["return_var"] = float(np.var(rh[-50:]))
         return InterventionContext(
             t_env=self.t_env,
             test_mode=test_mode,
-            return_history=self.test_returns if test_mode else self.train_returns,
-            recent_metrics=dict(self.test_stats if test_mode else self.train_stats),
+            return_history=list(rh),
+            recent_metrics=metrics,
+            metrics_history=self.metrics_history.snapshot(),  # 各训练指标的完整历史
             **extra,
         )
 
@@ -71,6 +82,8 @@ class ParallelRunner:
     def close_env(self):
         for parent_conn in self.parent_conns:
             parent_conn.send(("close", None))
+        for p in self.ps:
+            p.join(timeout=10)  # 等待子进程退出（关闭 SC2）
 
     def reset(self):
         self.batch = self.new_batch()
@@ -207,6 +220,7 @@ class ParallelRunner:
         cur_stats["ep_length"] = sum(episode_lengths) + cur_stats.get("ep_length", 0)
 
         cur_returns.extend(episode_returns)
+        self.return_history.extend(episode_returns)
 
         n_test_runs = max(1, self.args.test_nepisode // self.batch_size) * self.batch_size
         if test_mode and (len(self.test_returns) == n_test_runs):

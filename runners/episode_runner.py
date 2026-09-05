@@ -4,18 +4,20 @@ from components.episode_buffer import EpisodeBatch
 import numpy as np
 import torch as th
 
-from llm.base import InterventionContext
+from llm.base import InterventionContext, MetricsHistory
 from llm.manager import LLMAssistManager
 
 
 class EpisodeRunner:
-    def __init__(self, args, logger, mac, llm=None):
+    def __init__(self, args, logger, mac, llm=None, metrics_history=None):
         self.args = args
         self.logger = logger
         self.batch_size = self.args.batch_size_run
         assert self.batch_size == 1
         self.mac = mac
         self.llm = llm if llm is not None else LLMAssistManager()
+        self.metrics_history = metrics_history if metrics_history is not None else MetricsHistory()
+        self.return_history = []  # 持久的 reward 历史（供 LLM 上下文，不被周期性 clear）
 
         self.env = SMACEnv(**self.args.env_args)
         self.episode_limit = self.env.episode_limit
@@ -36,12 +38,21 @@ class EpisodeRunner:
                                  preprocess=preprocess, device=self.args.device)
 
     def _llm_ctx(self, test_mode, **extra):
-        """构造 LLM 介入决策所需的上下文（训练数据）。"""
+        """构造 LLM 介入决策所需的上下文（环境统计 + 训练指标最新值/历史 + reward 统计）。"""
+        metrics = dict(self.test_stats if test_mode else self.train_stats)  # 环境统计（win rate / ep_length / dead_*）
+        metrics.update(self.metrics_history.latest())  # 训练指标最新值（loss / td_error / advantage / ...）
+        rh = self.return_history
+        if rh:
+            metrics["return_mean"] = float(np.mean(rh))
+            metrics["return_std"] = float(np.std(rh))
+            metrics["return_ma"] = float(np.mean(rh[-50:]))   # 近 50 集 reward 移动平均
+            metrics["return_var"] = float(np.var(rh[-50:]))
         return InterventionContext(
             t_env=self.t_env,
             test_mode=test_mode,
-            return_history=self.test_returns if test_mode else self.train_returns,
-            recent_metrics=dict(self.test_stats if test_mode else self.train_stats),
+            return_history=list(rh),
+            recent_metrics=metrics,
+            metrics_history=self.metrics_history.snapshot(),  # 各训练指标的完整历史
             **extra,
         )
 
@@ -149,6 +160,7 @@ class EpisodeRunner:
             self.t_env += self.t
 
         cur_returns.append(episode_return)
+        self.return_history.append(episode_return)
 
         if test_mode and (len(self.test_returns) == self.args.test_nepisode):
             self._log(cur_returns, cur_stats, log_prefix)

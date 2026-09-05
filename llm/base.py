@@ -6,8 +6,31 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any
+
+
+class MetricsHistory:
+    """训练指标历史收集器：{指标名: [历史值列表]}。
+
+    learner 训练时写入，LLM 介入决策时读取（可拿最新值，也可拿完整历史）。
+    """
+
+    def __init__(self):
+        self.history = defaultdict(list)
+
+    def update(self, stats: dict):
+        for k, v in stats.items():
+            self.history[k].append(float(v))
+
+    def latest(self) -> dict:
+        """返回每个指标的最新值。"""
+        return {k: v[-1] for k, v in self.history.items() if v}
+
+    def snapshot(self) -> dict:
+        """返回每个指标的完整历史（浅拷贝）。"""
+        return {k: list(v) for k, v in self.history.items()}
 
 
 @dataclass
@@ -27,8 +50,9 @@ class InterventionContext:
     reward: float = 0.0
     terminated: bool = False
     info: dict = field(default_factory=dict)
-    return_history: list = field(default_factory=list)   # 回报历史
-    recent_metrics: dict = field(default_factory=dict)   # 近期训练指标
+    return_history: list = field(default_factory=list)   # 回报历史（reward 序列）
+    recent_metrics: dict = field(default_factory=dict)   # 近期训练指标（最新值）
+    metrics_history: dict = field(default_factory=dict)  # 训练指标历史（{指标名: [历史值]}）
 
 
 class RewardShaper(ABC):

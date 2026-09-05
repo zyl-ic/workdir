@@ -15,6 +15,7 @@ from envs.smac_env import SMACEnv
 from components.episode_buffer import ReplayBuffer
 from components.transforms import OneHot
 from utils.logger import Logger
+from llm.base import MetricsHistory
 from llm.manager import LLMAssistManager
 
 
@@ -67,7 +68,7 @@ def set_rng_state(state):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", default="config/mappo.yaml")
+    parser.add_argument("--config", default="config/qmix.yaml")
     parser.add_argument("--map", default=None)
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--max-steps", type=int, default=None)
@@ -129,8 +130,11 @@ def main():
     # ---- LLM 辅助（只预留接口，默认 no-op）----
     llm = LLMAssistManager(OmegaConf.to_container(args.get("llm", {}), resolve=True) or {})
 
+    # 共享的训练指标历史（learner 写，runner 读，供 LLM 介入决策使用）
+    metrics_history = MetricsHistory()
+
     if args.runner == "parallel":
-        runner = ParallelRunner(args, logger, mac, llm=llm)
+        runner = ParallelRunner(args, logger, mac, llm=llm, metrics_history=metrics_history)
         runner.setup(scheme, groups, preprocess=preprocess)
     else:
         if args.batch_size_run != 1:
@@ -138,12 +142,12 @@ def main():
                 f"EpisodeRunner 要求 batch_size_run=1，当前为 {args.batch_size_run}；"
                 f"若要并行采样请用 runner: parallel"
             )
-        runner = EpisodeRunner(args, logger, mac, llm=llm)
+        runner = EpisodeRunner(args, logger, mac, llm=llm, metrics_history=metrics_history)
         runner.setup(scheme, groups, preprocess=preprocess)
     if args.learner == "mappo":
-        learner = MAPPOLearner(mac, buffer.scheme, logger, args)
+        learner = MAPPOLearner(mac, buffer.scheme, logger, args, metrics_history=metrics_history)
     else:
-        learner = QLearner(mac, logger, args)
+        learner = QLearner(mac, logger, args, metrics_history=metrics_history)
 
     if args.device != "cpu":
         learner.cuda()
@@ -181,67 +185,69 @@ def main():
     last_eval_t_env = runner.t_env
     next_log_episode = 0
     next_save_episode = args.save_interval
-    while runner.t_env < args.t_max:
-        episode_batch = runner.run(test_mode=False)
-        episode_return = float(episode_batch["reward"].sum()) / args.batch_size_run
+    try:
+        while runner.t_env < args.t_max:
+            episode_batch = runner.run(test_mode=False)
+            episode_return = float(episode_batch["reward"].sum()) / args.batch_size_run
 
-        # 存 buffer 前先搬到 CPU（两个算法都存，供后续 LLM 等使用）
-        episode_batch.to("cpu")
-        buffer.insert_episode_batch(episode_batch)
+            # 存 buffer 前先搬到 CPU（两个算法都存，供后续 LLM 等使用）
+            episode_batch.to("cpu")
+            buffer.insert_episode_batch(episode_batch)
 
-        if args.learner == "mappo":
-            # on-policy：直接用刚采的 batch 训练，不从 buffer sample
-            max_ep_t = int(episode_batch.max_t_filled().item())
-            batch = episode_batch[:, :max_ep_t]
-            batch.to(args.device)
-            learner.train(batch, runner.t_env, episode)
-        elif buffer.can_sample(args.batch_size):
-            # off-policy（QMIX）：从 buffer 采样训练
-            batch = buffer.sample(args.batch_size)
-            max_ep_t = int(batch.max_t_filled().item())
-            batch = batch[:, :max_ep_t]
-            batch.to(args.device)
-            learner.train(batch, runner.t_env, episode)
+            if args.learner == "mappo":
+                # on-policy：直接用刚采的 batch 训练，不从 buffer sample
+                max_ep_t = int(episode_batch.max_t_filled().item())
+                batch = episode_batch[:, :max_ep_t]
+                batch.to(args.device)
+                learner.train(batch, runner.t_env, episode)
+            elif buffer.can_sample(args.batch_size):
+                # off-policy（QMIX）：从 buffer 采样训练
+                batch = buffer.sample(args.batch_size)
+                max_ep_t = int(batch.max_t_filled().item())
+                batch = batch[:, :max_ep_t]
+                batch.to(args.device)
+                learner.train(batch, runner.t_env, episode)
 
-        if episode >= next_log_episode:
-            logger.info(f"episode {episode:5d} | t_env {runner.t_env:8d} | return {episode_return:8.2f}")
-            next_log_episode += 10
+            if episode >= next_log_episode:
+                logger.info(f"episode {episode:5d} | t_env {runner.t_env:8d} | return {episode_return:8.2f}")
+                next_log_episode += 10
 
-        episode += args.batch_size_run
+            episode += args.batch_size_run
 
-        # ---- 周期性评估（贪婪策略，不消费训练预算）----
-        if runner.t_env - last_eval_t_env >= args.evaluate_interval:
-            n_eval_runs = max(1, args.test_nepisode // args.batch_size_run)
-            logger.info(f"--- Evaluating {args.test_nepisode} episodes ---")
-            for _ in range(n_eval_runs):
-                runner.run(test_mode=True)
-            last_eval_t_env = runner.t_env
-            logger.info("--- Evaluation done ---")
+            # ---- 周期性评估（贪婪策略，不消费训练预算）----
+            if runner.t_env - last_eval_t_env >= args.evaluate_interval:
+                n_eval_runs = max(1, args.test_nepisode // args.batch_size_run)
+                logger.info(f"--- Evaluating {args.test_nepisode} episodes ---")
+                for _ in range(n_eval_runs):
+                    runner.run(test_mode=True)
+                last_eval_t_env = runner.t_env
+                logger.info("--- Evaluation done ---")
 
-        if episode >= next_save_episode:
-            ckpt_dir.mkdir(parents=True, exist_ok=True)
-            learner.save_models(str(ckpt_dir))
-            buffer.save(str(ckpt_dir / "buffer.th"))
-            th.save(get_rng_state(), str(ckpt_dir / "rng.th"))
-            (ckpt_dir / "meta.json").write_text(
-                json.dumps({"episode": episode, "t_env": runner.t_env})
-            )
-            logger.save()
-            logger.info(f"Saved checkpoint at episode {episode}, t_env {runner.t_env}")
-            next_save_episode += args.save_interval
-
-    # 训练结束再存一份
-    ckpt_dir.mkdir(parents=True, exist_ok=True)
-    learner.save_models(str(ckpt_dir))
-    buffer.save(str(ckpt_dir / "buffer.th"))
-    th.save(get_rng_state(), str(ckpt_dir / "rng.th"))
-    (ckpt_dir / "meta.json").write_text(
-        json.dumps({"episode": episode, "t_env": runner.t_env})
-    )
-
-    runner.close_env()
-    logger.save()
-    logger.info("Training finished.")
+            if episode >= next_save_episode:
+                ckpt_dir.mkdir(parents=True, exist_ok=True)
+                learner.save_models(str(ckpt_dir))
+                buffer.save(str(ckpt_dir / "buffer.th"))
+                th.save(get_rng_state(), str(ckpt_dir / "rng.th"))
+                (ckpt_dir / "meta.json").write_text(
+                    json.dumps({"episode": episode, "t_env": runner.t_env})
+                )
+                logger.save()
+                logger.info(f"Saved checkpoint at episode {episode}, t_env {runner.t_env}")
+                next_save_episode += args.save_interval
+    except KeyboardInterrupt:
+        logger.info("Interrupted by user (Ctrl+C)")
+    finally:
+        # 保存 checkpoint + 关闭环境（Ctrl+C 中断时也会执行，确保子进程/SC2 被关闭）
+        ckpt_dir.mkdir(parents=True, exist_ok=True)
+        learner.save_models(str(ckpt_dir))
+        buffer.save(str(ckpt_dir / "buffer.th"))
+        th.save(get_rng_state(), str(ckpt_dir / "rng.th"))
+        (ckpt_dir / "meta.json").write_text(
+            json.dumps({"episode": episode, "t_env": runner.t_env})
+        )
+        runner.close_env()
+        logger.save()
+        logger.info("Training finished.")
 
 if __name__ == "__main__":
     main()

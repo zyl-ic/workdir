@@ -5,6 +5,7 @@ from torch.optim import RMSprop
 
 from components.episode_buffer import EpisodeBatch
 from networks.mappo import CentralVCritic
+from llm.base import MetricsHistory
 
 
 class MAPPOLearner:
@@ -15,11 +16,12 @@ class MAPPOLearner:
     - 训练：GAE 算 advantage → PPO clipped objective 更新 actor；MSE 更新 critic。
     """
 
-    def __init__(self, mac, scheme, logger, args):
+    def __init__(self, mac, scheme, logger, args, metrics_history=None):
         self.args = args
         self.n_agents = args.n_agents
         self.mac = mac
         self.logger = logger
+        self.metrics_history = metrics_history if metrics_history is not None else MetricsHistory()
 
         self.critic = CentralVCritic(scheme, args)
 
@@ -98,13 +100,18 @@ class MAPPOLearner:
 
         # ---- 日志 ----
         if t_env - self.log_stats_t >= self.args.learner_log_interval:
-            self.logger.log_stat("critic_loss", critic_loss.item(), t_env)
-            self.logger.log_stat("critic_grad_norm", critic_grad_norm, t_env)
-            self.logger.log_stat("actor_loss", actor_loss.item(), t_env)
-            self.logger.log_stat("actor_grad_norm", grad_norm, t_env)
-            self.logger.log_stat("entropy_mean", entropy_mean.item(), t_env)
-            self.logger.log_stat("advantage_mean", (raw_advantages * mask).sum().item() / mask.sum().item(), t_env)
-            self.logger.log_stat("ratio_mean", (ratio * mask_agents).sum().item() / mask_agents.sum().item(), t_env)
+            stats = {
+                "critic_loss": critic_loss.item(),
+                "critic_grad_norm": float(critic_grad_norm),
+                "actor_loss": actor_loss.item(),
+                "actor_grad_norm": float(grad_norm),
+                "entropy_mean": entropy_mean.item(),
+                "advantage_mean": (raw_advantages * mask).sum().item() / mask.sum().item(),
+                "ratio_mean": (ratio * mask_agents).sum().item() / mask_agents.sum().item(),
+            }
+            for k, v in stats.items():
+                self.logger.log_stat(k, v, t_env)
+            self.metrics_history.update(stats)
             self.log_stats_t = t_env
 
     def _actor_log_probs(self, batch, actions, avail_actions, return_entropy=False):
