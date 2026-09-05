@@ -1,4 +1,4 @@
-# 默认配置（3m 地图）。
+# 共用配置（由 main.py 与 qmix.yaml / mappo.yaml 合并）。
 # 命令行可用 --map / --seed / --max-steps 覆盖部分字段。
 
 env_args:
@@ -10,8 +10,8 @@ agent:
   rnn_hidden_dim: 64
   # n_actions 与 input_shape 由 main 根据环境信息自动填入
 
-# 动作选择（epsilon-greedy）
-action_selector:
+# 动作选择参数（epsilon 衰减，两个算法共用）
+action_selector_args:
   epsilon_start: 1.0
   epsilon_finish: 0.05
   epsilon_anneal_time: 50000
@@ -19,37 +19,37 @@ action_selector:
 # 观测与策略
 obs_last_action: true     # 输入拼接上一时刻动作的 one-hot
 obs_agent_id: true        # 输入拼接 agent id（one-hot）
-agent_output_type: null   # null -> 输出 Q 值；"pi_logits" -> 输出策略
 
-# Learner
+# 优化器 / 训练
 lr: 0.0005
 optim_alpha: 0.99
 optim_eps: 0.00001
 gamma: 0.99
-double_q: true
 target_update_interval: 200
 grad_norm_clip: 10.0
 learner_log_interval: 10000
 
-# Mixer
-mixer: qmix                # null -> VDN/IQL；"qmix" -> QMIX
-mixing_embed_dim: 32
-hypernet_layers: 2
-hypernet_embed: 64
-
 # Runner
-batch_size_run: 1
+runner: parallel           # episode -> EpisodeRunner（串行）；parallel -> ParallelRunner（并行多环境）
+env: smac                 # 环境注册名（parallel_runner 用，对应 envs/REGISTRY）
+batch_size_run: 5         # EpisodeRunner 必须为 1；ParallelRunner 为并行环境数
 test_nepisode: 32
 runner_log_interval: 10000
 evaluate_interval: 10000   # 每多少 t_env 评估一次
 t_max: 5000000
 
-# Buffer & 训练
+# Buffer（两个算法都存数据供后续使用；采样 batch_size 由 qmix.yaml 指定）
 buffer_size: 5000        # ReplayBuffer 容量（episode 数）
-batch_size: 32           # 每次训练的采样 batch（episode 数）
 
-# Checkpoint
-checkpoint_path: checkpoints
+# Checkpoint（checkpoint_path 由 qmix.yaml / mappo.yaml 各自指定，不同算法用不同目录）
 save_interval: 1000      # 每 N 个 episode 保存一次
-resume: true            # 启动时若存在 checkpoint 则加载
-#resume: false            # 启动时若存在 checkpoint 则加载
+resume: true             # 启动时若存在 checkpoint 则加载
+
+# LLM 辅助（reward shaping / action override / subgoal 规划 / 介入决策）
+# 只预留接口，默认全部关闭；具体实现后续接入。
+llm:
+  enabled: false          # 总开关
+  reward_shaping: false   # 奖励塑形
+  action_override: false  # 动作覆盖
+  subgoal: false          # 子目标规划
+  intervene_gate: false   # 用训练数据判断是否让 LLM 介入

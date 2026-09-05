@@ -1,0 +1,20 @@
+# MAPPO 特有参数（由 main.py 与 config/default.yaml 合并）
+
+learner: mappo
+action_selector: multinomial
+agent_output_type: pi_logits   # 输出策略概率
+
+# 采样（on-policy：batch_size_run 个并行环境各采一个 episode，直接训练，不 sample buffer）
+runner: parallel
+batch_size_run: 8              # on-policy batch size（并行环境数）
+
+# PPO 特有
+ppo_epochs: 4        # 每批数据更新几个 epoch
+clip_eps: 0.2        # PPO clip 范围
+gae_lambda: 0.95     # GAE 的 λ
+entropy_coef: 0.01   # 熵正则系数
+critic_lr: 0.0005    # critic 学习率
+advantage_norm: true # advantage 标准化
+
+# Checkpoint 目录
+checkpoint_path: checkpoints/mappo

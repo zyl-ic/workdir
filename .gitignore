@@ -1,0 +1,12 @@
+# Python 字节码 / 缓存
+__pycache__/
+*.py[cod]
+*$py.class
+
+# IDE 配置
+.idea/
+.vscode/
+
+# 训练产物（日志 / checkpoint / 生成的图）
+logs/
+checkpoints/

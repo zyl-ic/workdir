@@ -21,6 +21,14 @@ class MultinomialActionSelector():
 
         self.epsilon = self.schedule.eval(t_env)
 
+        # 无可用动作的 agent（如已死亡）概率全 0，fallback 到均匀分布，避免 Categorical 报错
+        row_sum = masked_policies.sum(dim=-1, keepdim=True)
+        masked_policies = th.where(
+            row_sum > 0,
+            masked_policies,
+            th.ones_like(masked_policies) / masked_policies.size(-1),
+        )
+
         if test_mode and self.test_greedy:
             picked_actions = masked_policies.max(dim=2)[1]
         else:

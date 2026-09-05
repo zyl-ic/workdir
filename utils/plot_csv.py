@@ -90,7 +90,6 @@ def draw_curves(series, names, same_plot, cols, title, output):
     plt.close(fig)
     print(f"Saved to {output}")
 
-
 def main():
     parser = argparse.ArgumentParser(
         description="把训练日志 CSV（t_env,name,value）转成折线图",

@@ -1,6 +1,6 @@
 from networks.rnn_agent import RNNAgent
 import torch as th
-from components.action_selectors import EpsilonGreedyActionSelector
+from components.action_selectors import REGISTRY as action_REGISTRY
 
 # This multi-agent controller shares parameters between agents
 class BasicMAC:
@@ -10,15 +10,25 @@ class BasicMAC:
         self.args.agent.input_shape = self._get_input_shape(scheme)
         self.agent = RNNAgent(self.args.agent.input_shape, self.args.agent)
         self.agent_output_type = getattr(self.args, "agent_output_type", None)
-        self.action_selector = EpsilonGreedyActionSelector(args.action_selector)
+        selector_type = getattr(self.args, "action_selector", "epsilon_greedy")
+        self.action_selector = action_REGISTRY[selector_type](args.action_selector_args)
         self.hidden_states = None
 
-    def select_actions(self, ep_batch, t_ep, t_env, test_mode=False):
+    def select_actions(self, ep_batch, t_ep, t_env, bs=slice(None), test_mode=False, return_probs=False):
         # Only select actions for the batch elements in bs
         avail_actions = ep_batch["avail_actions"][:, t_ep]
         agent_outputs = self.forward(ep_batch, t_ep, test_mode=test_mode)
-        chosen_actions = self.action_selector.select_action(agent_outputs, avail_actions, t_env, test_mode=test_mode)
+        chosen_actions = self.action_selector.select_action(agent_outputs[bs], avail_actions[bs], t_env, test_mode=test_mode)
+        if return_probs:
+            # 返回 π 分布（mask 掉不可用动作），供 override 后重算实际执行动作的 log prob
+            probs = agent_outputs[bs].clone()
+            probs[avail_actions[bs] == 0] = 0.0
+            return chosen_actions, probs
         return chosen_actions
+
+    def log_probs_of(self, probs, actions):
+        """π 分布下，指定动作的 log 概率。probs 未归一化也没关系（Categorical 内部会归一化）。"""
+        return th.distributions.Categorical(probs=probs).log_prob(actions)
 
     def forward(self, ep_batch, t, test_mode=False):
         agent_inputs = self._build_inputs(ep_batch, t)
@@ -27,26 +37,13 @@ class BasicMAC:
 
         # Softmax the agent outputs if they're policy logits
         if self.agent_output_type == "pi_logits":
-
+            # 纯策略 π：softmax 后直接作为采样分布，探索由 multinomial sample 实现（MAPPO 不需要 epsilon）
             if getattr(self.args, "mask_before_softmax", True):
                 # Make the logits for unavailable actions very negative to minimise their affect on the softmax
                 reshaped_avail_actions = avail_actions.reshape(ep_batch.batch_size * self.n_agents, -1)
                 agent_outs[reshaped_avail_actions == 0] = -1e10
 
             agent_outs = th.nn.functional.softmax(agent_outs, dim=-1)
-            if not test_mode:
-                # Epsilon floor
-                epsilon_action_num = agent_outs.size(-1)
-                if getattr(self.args, "mask_before_softmax", True):
-                    # With probability epsilon, we will pick an available action uniformly
-                    epsilon_action_num = reshaped_avail_actions.sum(dim=1, keepdim=True).float()
-
-                agent_outs = ((1 - self.action_selector.epsilon) * agent_outs
-                               + th.ones_like(agent_outs) * self.action_selector.epsilon/epsilon_action_num)
-
-                if getattr(self.args, "mask_before_softmax", True):
-                    # Zero out the unavailable actions
-                    agent_outs[reshaped_avail_actions == 0] = 0.0
 
         return agent_outs.view(ep_batch.batch_size, self.n_agents, -1)
 

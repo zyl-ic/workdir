@@ -1,0 +1,18 @@
+# QMIX 特有参数（由 main.py 与 config/default.yaml 合并）
+
+learner: qmix
+action_selector: epsilon_greedy
+agent_output_type: null        # 输出 Q 值
+
+# Mixer
+mixer: qmix                    # null -> VDN/IQL；"qmix" -> QMIX
+mixing_embed_dim: 32
+hypernet_layers: 2
+hypernet_embed: 64
+double_q: true
+
+# 训练（off-policy：从 replay buffer 采样）
+batch_size: 32                # 每次训练的采样 batch（episode 数）
+
+# Checkpoint 目录
+checkpoint_path: checkpoints/qmix

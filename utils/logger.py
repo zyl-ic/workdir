@@ -52,3 +52,15 @@ class Logger:
             writer.writerow(["t_env", "name", "value"])
             writer.writerows(self.records)
         self.info(f"Saved stats to {path}")
+
+    def load(self):
+        """读回已有的 stats.csv（用于 resume 时恢复日志记录）。"""
+        if self.log_dir is None:
+            return
+        path = self.log_dir / "stats.csv"
+        if not path.exists():
+            return
+        with path.open(newline="") as f:
+            for row in csv.DictReader(f):
+                self.records.append((int(row["t_env"]), row["name"], float(row["value"])))
+        self.records.sort()
